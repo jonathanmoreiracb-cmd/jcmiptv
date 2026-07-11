@@ -16,15 +16,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Auto-fix URL for Web players: Browsers cannot play raw MPEG-TS (.ts). 
-    // They need HLS (.m3u8). This replaces the output parameter automatically.
-    let targetUrl = url;
-    if (targetUrl.includes('output=ts') || targetUrl.includes('output=mpegts')) {
-      targetUrl = targetUrl.replace('output=ts', 'output=m3u8').replace('output=mpegts', 'output=m3u8');
-    }
-
     // Add generic user agent as some IPTV providers block default fetch
-    const response = await fetch(targetUrl, {
+    const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': '*/*'
