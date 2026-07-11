@@ -104,6 +104,20 @@ export default function Home() {
 
   const videoJsOptions = useMemo(() => {
     if (!activeChannel) return null;
+
+    let streamUrl = activeChannel.url;
+
+    // Auto-fix stream URL for browser compatibility: convert MPEG-TS (/ts or .ts) to HLS (/m3u8 or .m3u8)
+    if (streamUrl.endsWith('/ts')) {
+      streamUrl = streamUrl.slice(0, -3) + '/m3u8';
+    } else if (streamUrl.endsWith('.ts')) {
+      streamUrl = streamUrl.slice(0, -3) + '.m3u8';
+    } else if (streamUrl.includes('/ts?')) {
+      streamUrl = streamUrl.replace('/ts?', '/m3u8?');
+    } else if (streamUrl.includes('.ts?')) {
+      streamUrl = streamUrl.replace('.ts?', '.m3u8?');
+    }
+
     return {
       autoplay: true,
       controls: true,
@@ -111,8 +125,8 @@ export default function Home() {
       fluid: true,
       sources: [
         {
-          src: activeChannel.url,
-          type: activeChannel.url.toLowerCase().includes('m3u8') ? 'application/x-mpegURL' : 'video/mp4',
+          src: streamUrl,
+          type: streamUrl.toLowerCase().includes('m3u8') ? 'application/x-mpegURL' : 'video/mp4',
         },
       ],
     };

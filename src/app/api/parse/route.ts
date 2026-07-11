@@ -83,7 +83,20 @@ export async function POST(request: Request) {
           };
         } else if (!line.startsWith('#')) {
           if (currentChannel.name) {
-            currentChannel.url = line;
+            let channelUrl = line;
+            
+            // Auto-fix stream URL for browser compatibility: convert MPEG-TS (/ts) to HLS (/m3u8)
+            if (channelUrl.endsWith('/ts')) {
+              channelUrl = channelUrl.slice(0, -3) + '/m3u8';
+            } else if (channelUrl.endsWith('.ts')) {
+              channelUrl = channelUrl.slice(0, -3) + '.m3u8';
+            } else if (channelUrl.includes('/ts?')) {
+              channelUrl = channelUrl.replace('/ts?', '/m3u8?');
+            } else if (channelUrl.includes('.ts?')) {
+              channelUrl = channelUrl.replace('.ts?', '.m3u8?');
+            }
+
+            currentChannel.url = channelUrl;
             channels.push(currentChannel as Channel);
             currentChannel = {};
             
