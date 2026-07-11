@@ -16,6 +16,8 @@ export default function Home() {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [playerRef, setPlayerRef] = useState<Player | null>(null);
   const [isCachedData, setIsCachedData] = useState(false);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   // Load saved link and cached channels on mount
   useEffect(() => {
@@ -38,6 +40,47 @@ export default function Home() {
     }
     loadCache();
   }, []);
+
+  // Resolve active channel stream URL to a secure HTTPS link
+  useEffect(() => {
+    if (!activeChannel) {
+      setResolvedUrl(null);
+      return;
+    }
+
+    setResolving(true);
+    setResolvedUrl(null);
+
+    let streamUrl = activeChannel.url;
+
+    // Apply the ts to m3u8 fix first
+    if (streamUrl.endsWith('/ts')) {
+      streamUrl = streamUrl.slice(0, -3) + '/m3u8';
+    } else if (streamUrl.endsWith('.ts')) {
+      streamUrl = streamUrl.slice(0, -3) + '.m3u8';
+    } else if (streamUrl.includes('/ts?')) {
+      streamUrl = streamUrl.replace('/ts?', '/m3u8?');
+    } else if (streamUrl.includes('.ts?')) {
+      streamUrl = streamUrl.replace('.ts?', '.m3u8?');
+    }
+
+    fetch(`/api/resolve?url=${encodeURIComponent(streamUrl)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.url) {
+          setResolvedUrl(data.url);
+        } else {
+          setResolvedUrl(streamUrl);
+        }
+      })
+      .catch((err) => {
+        console.error('Error resolving stream URL:', err);
+        setResolvedUrl(streamUrl);
+      })
+      .finally(() => {
+        setResolving(false);
+      });
+  }, [activeChannel]);
 
   const handleLoadPlaylist = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,20 +146,7 @@ export default function Home() {
   };
 
   const videoJsOptions = useMemo(() => {
-    if (!activeChannel) return null;
-
-    let streamUrl = activeChannel.url;
-
-    // Auto-fix stream URL for browser compatibility: convert MPEG-TS (/ts or .ts) to HLS (/m3u8 or .m3u8)
-    if (streamUrl.endsWith('/ts')) {
-      streamUrl = streamUrl.slice(0, -3) + '/m3u8';
-    } else if (streamUrl.endsWith('.ts')) {
-      streamUrl = streamUrl.slice(0, -3) + '.m3u8';
-    } else if (streamUrl.includes('/ts?')) {
-      streamUrl = streamUrl.replace('/ts?', '/m3u8?');
-    } else if (streamUrl.includes('.ts?')) {
-      streamUrl = streamUrl.replace('.ts?', '.m3u8?');
-    }
+    if (!resolvedUrl) return null;
 
     return {
       autoplay: true,
@@ -125,12 +155,12 @@ export default function Home() {
       fluid: true,
       sources: [
         {
-          src: streamUrl,
-          type: streamUrl.toLowerCase().includes('m3u8') ? 'application/x-mpegURL' : 'video/mp4',
+          src: resolvedUrl,
+          type: resolvedUrl.toLowerCase().includes('m3u8') ? 'application/x-mpegURL' : 'video/mp4',
         },
       ],
     };
-  }, [activeChannel]);
+  }, [resolvedUrl]);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 font-sans selection:bg-indigo-500/30">
@@ -296,7 +326,13 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex-1 w-full relative">
-                  {videoJsOptions && (
+                  {resolving && (
+                    <div className="absolute inset-0 bg-neutral-950/80 rounded-xl flex flex-col items-center justify-center text-indigo-400 gap-3 z-10">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                      <span className="text-sm font-medium">Resolvendo link seguro...</span>
+                    </div>
+                  )}
+                  {videoJsOptions && !resolving && (
                     <VideoPlayer options={videoJsOptions} onReady={handlePlayerReady} />
                   )}
                 </div>
