@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Channel } from './api/parse/route';
 import VideoPlayer from '@/components/VideoPlayer';
-import { Play, Search, Tv, ImageOff, Loader2, Link as LinkIcon, Trash2, Database } from 'lucide-react';
+import { Play, Search, Tv, ImageOff, Loader2, Link as LinkIcon, Trash2, Database, Upload } from 'lucide-react';
 import Player from 'video.js/dist/types/player';
 import { saveChannelsToCache, getCachedChannels, clearCachedChannels } from '@/utils/db';
 
@@ -131,6 +131,103 @@ export default function Home() {
     }
   };
 
+  const parseM3uText = (text: string): Channel[] => {
+    const lines = text.split('\n');
+    const parsedChannels: Channel[] = [];
+    let currentChannel: Partial<Channel> = {};
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      if (line.startsWith('#EXTINF:')) {
+        const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+        const groupMatch = line.match(/group-title="([^"]+)"/);
+        
+        const nameParts = line.split(',');
+        const name = nameParts.length > 1 ? nameParts.slice(1).join(',').trim() : 'Unknown Channel';
+
+        currentChannel = {
+          id: Math.random().toString(36).substring(7),
+          name: name,
+          logo: logoMatch ? logoMatch[1] : '',
+          group: groupMatch ? groupMatch[1] : 'Uncategorized',
+        };
+      } else if (!line.startsWith('#')) {
+        if (currentChannel.name) {
+          let channelUrl = line;
+          
+          // Auto-fix stream URL for browser compatibility: convert MPEG-TS (/ts) to HLS (/m3u8)
+          if (channelUrl.endsWith('/ts')) {
+            channelUrl = channelUrl.slice(0, -3) + '/m3u8';
+          } else if (channelUrl.endsWith('.ts')) {
+            channelUrl = channelUrl.slice(0, -3) + '.m3u8';
+          } else if (channelUrl.includes('/ts?')) {
+            channelUrl = channelUrl.replace('/ts?', '/m3u8?');
+          } else if (channelUrl.includes('.ts?')) {
+            channelUrl = channelUrl.replace('.ts?', '.m3u8?');
+          }
+
+          currentChannel.url = channelUrl;
+          parsedChannels.push(currentChannel as Channel);
+          currentChannel = {};
+        }
+      }
+    }
+    return parsedChannels;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const text = event.target?.result as string;
+        if (!text) {
+          setError('O arquivo está vazio.');
+          setLoading(false);
+          return;
+        }
+
+        const parsedChannels = parseM3uText(text);
+        if (parsedChannels.length === 0) {
+          setError('Nenhum canal encontrado no arquivo M3U.');
+          setLoading(false);
+          return;
+        }
+
+        setChannels(parsedChannels);
+        if (parsedChannels.length > 0) {
+          setActiveChannel(parsedChannels[0]);
+        }
+
+        // Save parsed channels to IndexedDB local cache and reset URL config
+        localStorage.removeItem('m3u_url');
+        setM3uUrl('');
+        await saveChannelsToCache(parsedChannels);
+        setIsCachedData(false);
+        setLoading(false);
+      };
+      
+      reader.onerror = () => {
+        setError('Erro ao ler o arquivo.');
+        setLoading(false);
+      };
+
+      reader.readAsText(file);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao processar o arquivo.');
+      setLoading(false);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const filteredChannels = useMemo(() => {
     return channels.filter((channel) =>
       channel.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -187,10 +284,9 @@ export default function Home() {
                 onChange={(e) => setM3uUrl(e.target.value)}
                 placeholder="Cole a URL da sua lista M3U aqui..."
                 className="block w-full pl-10 pr-3 py-3 bg-neutral-900 border border-white/10 rounded-xl text-neutral-200 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all shadow-sm text-sm"
-                required
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
                 disabled={loading}
@@ -208,6 +304,24 @@ export default function Home() {
                   </>
                 )}
               </button>
+
+              <input
+                type="file"
+                accept=".m3u,.m3u8"
+                onChange={handleFileUpload}
+                id="m3u-file-upload"
+                className="hidden"
+                disabled={loading}
+              />
+              <label
+                htmlFor="m3u-file-upload"
+                className="px-4 py-3 bg-neutral-900 hover:bg-neutral-800 border border-white/5 text-neutral-400 hover:text-white font-medium rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 text-sm cursor-pointer whitespace-nowrap"
+                title="Carregar arquivo .m3u do seu dispositivo"
+              >
+                <Upload className="w-5 h-5" />
+                <span className="hidden md:inline">Subir Arquivo .m3u</span>
+              </label>
+
               {(channels.length > 0 || m3uUrl) && (
                 <button
                   type="button"
